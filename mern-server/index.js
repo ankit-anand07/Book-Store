@@ -1,4 +1,4 @@
-import express, { json } from 'express';
+import express from 'express';
 import cors from 'cors';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 
@@ -26,11 +26,10 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server (optional starting in v4.7)
+    // Connect the client to the server
     await client.connect();
     console.log("Connected successfully to server");
 
-    // Create a collection of documents
     const bookcollections = client.db("BookInventory").collection("books");
 
     // Insert a book into the database: POST method
@@ -47,20 +46,35 @@ async function run() {
 
     // Get all books from database
     app.get("/all-books", async (req, res) => {
-      const books = bookcollections.find();
-      const result = await books.toArray();
-      res.send(result);
+      try {
+        const books = await bookcollections.find().toArray();
+        res.send(books);
+      } catch (error) {
+        console.error('Error fetching books:', error);
+        res.status(500).send({ message: 'Failed to fetch books', error });
+      }
     });
 
     // Get single book from database
     app.get("/book/:id", async (req, res) => {
       const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const result = await bookcollections.findOne(filter);
-      if (result) {
+
+      try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid book ID format' });
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const result = await bookcollections.findOne(filter);
+
+        if (!result) {
+          return res.status(404).send({ message: 'Book not found' });
+        }
+
         res.send(result);
-      } else {
-        res.status(404).send({ message: 'Book not found' });
+      } catch (error) {
+        console.error('Error fetching book:', error);
+        res.status(500).send({ message: 'Failed to fetch book', error });
       }
     });
 
@@ -68,34 +82,43 @@ async function run() {
     app.patch("/book/:id", async (req, res) => {
       const id = req.params.id;
       const updateBookData = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const options = { upsert: true };
 
-      const updateDoc = {
-        $set: {
-          ...updateBookData
+      try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid book ID format' });
         }
-      };
-      // Update
-      const result = await bookcollections.updateOne(filter, updateDoc, options);
-      res.send(result);
+
+        const filter = { _id: new ObjectId(id) };
+        const options = { upsert: true };
+        const updateDoc = { $set: { ...updateBookData } };
+
+        const result = await bookcollections.updateOne(filter, updateDoc, options);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Book not found' });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error('Error updating book:', error);
+        res.status(500).send({ message: 'Failed to update book', error });
+      }
     });
 
     // Delete a book from database
     app.delete("/book/:id", async (req, res) => {
       const id = req.params.id;
 
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid book ID" });
-      }
-
-      const filter = { _id: new ObjectId(id) };
-
       try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid book ID format' });
+        }
+
+        const filter = { _id: new ObjectId(id) };
         const result = await bookcollections.deleteOne(filter);
 
         if (result.deletedCount === 0) {
-          return res.status(404).send({ message: "Book not found" });
+          return res.status(404).send({ message: 'Book not found' });
         }
 
         res.status(200).send({ message: "Book deleted successfully", result });
@@ -115,7 +138,7 @@ async function run() {
       res.send(result);
     });
 
-    // Send a ping to confirm a successful connection
+    // Confirm MongoDB connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (error) {
@@ -131,5 +154,5 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+  console.log(`App listening on port ${port}`);
 });
